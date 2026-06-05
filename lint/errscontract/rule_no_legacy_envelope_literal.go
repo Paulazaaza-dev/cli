@@ -16,8 +16,10 @@ import (
 // call sites must return a typed errs.* error instead. Future domains opt in by
 // appending their path prefix here.
 var migratedEnvelopePaths = []string{
+	"shortcuts/base/",
 	"shortcuts/drive/",
 	"shortcuts/mail/",
+	"shortcuts/calendar/",
 }
 
 // legacyOutputImportPath is the import path of the package that declares the
