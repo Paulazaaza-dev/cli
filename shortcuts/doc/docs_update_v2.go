@@ -24,7 +24,9 @@ var validCommandsV2 = map[string]bool{
 	"append":                  true,
 }
 
-const docsUpdateReferenceMapFlagDesc = "结构化 `reference_map` JSON object；当 `--content` 使用正文外部载荷 / 引用映射时与内容一起传给服务，支持直接 JSON、`@reference-map.json`（相对路径）或 `-` 从 stdin 读取。通常用于回写已有 `document.reference_map`。"
+const docsReferenceMapFlagDesc = "结构化 `reference_map` JSON object；必须与 `--content` 一起使用。普通写入优先把结构写在正文里；`--reference-map` 主要用于保留或回放已有 `document.reference_map`。支持直接 JSON、`@reference-map.json`（相对路径）或 `-` 从 stdin 读取。"
+
+const docsUpdateReferenceMapFlagDesc = docsReferenceMapFlagDesc
 
 // v2UpdateFlags returns the flag definitions for the v2 (OpenAPI) update path.
 func v2UpdateFlags() []common.Flag {
@@ -115,13 +117,20 @@ func validateUpdateV2(_ context.Context, runtime *common.RuntimeContext) error {
 			return errs.NewValidationError(errs.SubtypeInvalidArgument, "--command append requires --content").WithParam("--content")
 		}
 	}
+	if content != "" {
+		_, err := resolveDocsV2ContentReferenceMap(runtime)
+		return err
+	}
 	return nil
 }
 
 func dryRunUpdateV2(_ context.Context, runtime *common.RuntimeContext) *common.DryRunAPI {
 	// Validate has already accepted --doc; parseDocumentRef cannot fail here.
 	ref, _ := parseDocumentRef(runtime.Str("doc"))
-	body, _ := buildUpdateBodyWithReferenceMap(runtime)
+	body, err := buildUpdateBodyWithHTML5ReferenceMap(runtime)
+	if err != nil {
+		return common.NewDryRunAPI().Set("error", err.Error())
+	}
 	apiPath := fmt.Sprintf("/open-apis/docs_ai/v1/documents/%s", ref.Token)
 	return common.NewDryRunAPI().
 		PUT(apiPath).
@@ -134,7 +143,7 @@ func executeUpdateV2(_ context.Context, runtime *common.RuntimeContext) error {
 	ref, _ := parseDocumentRef(runtime.Str("doc"))
 
 	apiPath := fmt.Sprintf("/open-apis/docs_ai/v1/documents/%s", ref.Token)
-	body, err := buildUpdateBodyWithReferenceMap(runtime)
+	body, err := buildUpdateBodyWithHTML5ReferenceMap(runtime)
 	if err != nil {
 		return err
 	}

@@ -5,6 +5,7 @@ package doc
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 
@@ -60,6 +61,39 @@ func TestDocsUpdateDryRunIgnoresAPIVersionCompatFlag(t *testing.T) {
 				t.Fatalf("dry-run block_id = %#v, want %q", got, want)
 			}
 		})
+	}
+}
+
+func TestBuildUpdateBodyWithHTML5ReferenceMapReportsPathError(t *testing.T) {
+	t.Parallel()
+
+	runtime := newUpdateShortcutTestRuntime(t, "", map[string]string{
+		"content": `<html5-block path="@missing.html"></html5-block>`,
+	})
+
+	_, err := buildUpdateBodyWithHTML5ReferenceMap(runtime)
+	if err == nil {
+		t.Fatal("buildUpdateBodyWithHTML5ReferenceMap() succeeded, want error")
+	}
+	p, ok := errs.ProblemOf(err)
+	if !ok {
+		t.Fatalf("ProblemOf() ok = false for %T (%v)", err, err)
+	}
+	if p.Category != errs.CategoryValidation {
+		t.Fatalf("category = %q, want %q", p.Category, errs.CategoryValidation)
+	}
+	if p.Subtype != errs.SubtypeInvalidArgument {
+		t.Fatalf("subtype = %q, want %q", p.Subtype, errs.SubtypeInvalidArgument)
+	}
+	var validationErr *errs.ValidationError
+	if !errors.As(err, &validationErr) {
+		t.Fatalf("error type = %T, want *errs.ValidationError", err)
+	}
+	if validationErr.Param != "path" {
+		t.Fatalf("param = %q, want path", validationErr.Param)
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("error should preserve os.ErrNotExist cause, got: %v", err)
 	}
 }
 

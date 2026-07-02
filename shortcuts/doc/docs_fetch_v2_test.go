@@ -505,14 +505,14 @@ func TestBuildFetchBodyIncludesFetchExtraParamByDefault(t *testing.T) {
 	if got["enable_user_cite_reference_map"] != true {
 		t.Fatalf("enable_user_cite_reference_map = %#v, want true in %#v", got["enable_user_cite_reference_map"], got)
 	}
-	if _, ok := got["return_html5_block_data"]; ok {
-		t.Fatalf("extra_param should not request html5 block data: %#v", got)
+	if got["return_html5_block_data"] != true {
+		t.Fatalf("return_html5_block_data = %#v, want true in %#v", got["return_html5_block_data"], got)
 	}
 	if _, ok := got["reference_map_mode"]; ok {
 		t.Fatalf("extra_param should not use legacy reference_map_mode: %#v", got)
 	}
-	if len(got) != 1 {
-		t.Fatalf("extra_param should only contain fetch reference_map toggle: %#v", got)
+	if len(got) != 2 {
+		t.Fatalf("extra_param should only contain fetch reference_map and html5 data toggles: %#v", got)
 	}
 }
 
@@ -576,6 +576,46 @@ func TestDocsFetchIMMarkdownRequestsMarkdownFromAPI(t *testing.T) {
 	dry := decodeDocDryRun(t, DocsFetch.DryRun(context.Background(), runtime))
 	if got, want := dry.API[0].Body["format"], "markdown"; got != want {
 		t.Fatalf("dry-run format = %#v, want %q", got, want)
+	}
+}
+
+func TestDocsFetchIMMarkdownIgnoresHTML5BlockInsideCodeFence(t *testing.T) {
+	t.Setenv("LARKSUITE_CLI_CONFIG_DIR", t.TempDir())
+
+	f, stdout, _, reg := cmdutil.TestFactory(t, docsTestConfigWithAppID("docs-fetch-im-markdown-code-fence"))
+	registerDocsAIStub(reg, "POST", "/open-apis/docs_ai/v1/documents/doxcnFetchIMMarkdownFence/fetch", map[string]interface{}{
+		"document": map[string]interface{}{
+			"document_id": "doxcnFetchIMMarkdownFence",
+			"revision_id": float64(1),
+			"content":     "```xml\n<html5-block data-ref=\"html5_1\"></html5-block>\n```\n",
+		},
+	})
+
+	err := mountAndRunDocs(t, DocsFetch, []string{
+		"+fetch",
+		"--doc", "doxcnFetchIMMarkdownFence",
+		"--doc-format", "im-markdown",
+		"--format", "json",
+		"--as", "bot",
+	}, f, stdout)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var envelope map[string]interface{}
+	if err := json.Unmarshal(stdout.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode output: %v\nraw=%s", err, stdout.String())
+	}
+	if errField, ok := envelope["error"]; ok {
+		t.Fatalf("fetch output should not contain error: %#v", errField)
+	}
+	data, _ := envelope["data"].(map[string]interface{})
+	doc, _ := data["document"].(map[string]interface{})
+	content, _ := doc["content"].(string)
+	if !strings.Contains(content, "```xml\n<html5-block data-ref=\"html5_1\"></html5-block>\n```") {
+		t.Fatalf("fenced html5-block should stay in content, got:\n%s", content)
+	}
+	if _, ok := doc["reference_map"]; ok {
+		t.Fatalf("fenced html5-block should not create reference_map side effects: %#v", doc["reference_map"])
 	}
 }
 
